@@ -6,7 +6,13 @@ async function request(method, path, body) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+    let message = text;
+    try {
+      message = JSON.parse(text).error || text;
+    } catch {
+      // not JSON; keep the raw text
+    }
+    throw new Error(message || `Request failed (${res.status})`);
   }
   if (res.status === 204) return null;
   return res.json();
@@ -46,9 +52,15 @@ export const api = {
     ).toString();
     return request("GET", `/orders${qs ? `?${qs}` : ""}`);
   },
+  getOrder: (id) => request("GET", `/orders/${id}`),
   createOrder: (data) => request("POST", "/orders", data),
   updateOrder: (id, data) => request("PATCH", `/orders/${id}`, data),
   deleteOrder: (id) => request("DELETE", `/orders/${id}`),
+
+  // database explorer
+  dbTables: () => request("GET", "/database/tables"),
+  dbQueries: () => request("GET", "/database/queries"),
+  runDbQuery: (key) => request("GET", `/database/queries/${key}`),
 
   // dashboard
   summary: () => request("GET", "/dashboard/summary"),

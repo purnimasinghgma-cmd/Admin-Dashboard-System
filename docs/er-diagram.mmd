@@ -1,0 +1,62 @@
+erDiagram
+    CUSTOMERS ||--o{ ORDERS : places
+    ORDERS ||--|{ ORDER_ITEMS : contains
+    PRODUCTS ||--o{ ORDER_ITEMS : "appears in"
+    CATEGORIES ||--o{ PRODUCTS : groups
+    PRODUCTS ||--o{ STOCK_LOG : "stock changes"
+
+    CUSTOMERS {
+        int id PK
+        text name
+        text email UK
+        timestamp created_at
+    }
+    ORDERS {
+        int id PK
+        text order_number UK
+        int customer_id FK
+        text status
+        timestamp created_at
+    }
+    ORDER_ITEMS {
+        int id PK
+        int order_id FK
+        int product_id FK
+        int quantity
+        numeric unit_price
+    }
+    PRODUCTS {
+        int id PK
+        text name
+        text sku UK
+        int category_id FK
+        numeric price
+        int stock
+        timestamp created_at
+    }
+    CATEGORIES {
+        int id PK
+        text name UK
+    }
+    STOCK_LOG {
+        int id PK
+        int product_id FK
+        int change
+        text reason
+        timestamp created_at
+    }
+    USERS {
+        int id PK
+        text name
+        text email UK
+        text role
+        text status
+        text avatar_url
+        timestamp last_active_at
+        timestamp created_at
+    }
+    SESSION {
+        text id PK
+        text role
+        timestamp updated_at
+    }

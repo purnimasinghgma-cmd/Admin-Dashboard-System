@@ -50,14 +50,23 @@ artifacts/admin-dashboard/
 
 ## Database
 
-Tables (auto-created by `pnpm --filter @workspace/admin-dashboard run seed`):
+Normalized (3NF) schema defined in `artifacts/admin-dashboard/server/schema.sql`
+and auto-created on server start (or by
+`pnpm --filter @workspace/admin-dashboard run seed`). Full write-up, ER diagram
+and viva demo script: `docs/DBMS_REPORT.md`.
 
-- `users` — id, name, email, role (admin/manager/user), status, avatar_url,
-  last_active_at, created_at
-- `products` — id, name, sku, category, price, stock, created_at
-- `orders` — id, order_number, customer_name/email, product_name/category,
-  amount, status, created_at
+- `users` — dashboard staff accounts (role, status)
+- `customers` — people who buy (unique email)
+- `categories` — product categories
+- `products` — name, sku, category_id (FK), price, stock
+- `orders` — order_number, customer_id (FK), status
+- `order_items` — junction orders <-> products (quantity, unit_price)
+- `stock_log` — audit trail written by triggers
 - `session` — single-row demo session storing the active role
+
+Also: 6 views (`v_order_totals`, `v_orders_detail`, `v_sales_by_category`,
+`v_top_products`, `v_customer_ranking`, `v_low_stock`), 1 function, and 3
+triggers that keep `products.stock` in sync with orders.
 
 ## Key Commands
 

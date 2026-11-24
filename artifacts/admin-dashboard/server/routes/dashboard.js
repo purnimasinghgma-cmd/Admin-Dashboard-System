@@ -8,6 +8,10 @@ function pctChange(curr, prev) {
   return Math.round(((curr - prev) / prev) * 1000) / 10;
 }
 
+// Revenue is never stored on the order: it is SUM(quantity * unit_price) of the
+// order's lines, exposed by the v_order_totals view.  Cancelled / refunded
+// orders do not count.
+
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
     const now = new Date();
@@ -17,17 +21,20 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
     start60.setDate(start60.getDate() - 60);
 
     const cur = await query(
-      `SELECT COALESCE(SUM(amount), 0)::float AS rev,
+      `SELECT COALESCE(SUM(t.total), 0)::float AS rev,
               COUNT(*)::int AS cnt
-       FROM orders
-       WHERE created_at >= $1 AND status NOT IN ('cancelled','refunded')`,
+         FROM orders o
+         JOIN v_order_totals t ON t.order_id = o.id
+        WHERE o.created_at >= $1 AND o.status NOT IN ('cancelled','refunded')`,
       [start30],
     );
     const prev = await query(
-      `SELECT COALESCE(SUM(amount), 0)::float AS rev,
+      `SELECT COALESCE(SUM(t.total), 0)::float AS rev,
               COUNT(*)::int AS cnt
-       FROM orders
-       WHERE created_at >= $1 AND created_at < $2 AND status NOT IN ('cancelled','refunded')`,
+         FROM orders o
+         JOIN v_order_totals t ON t.order_id = o.id
+        WHERE o.created_at >= $1 AND o.created_at < $2
+          AND o.status NOT IN ('cancelled','refunded')`,
       [start60, start30],
     );
 
@@ -66,14 +73,15 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
 dashboardRouter.get("/sales-by-day", async (_req, res, next) => {
   try {
     const r = await query(
-      `SELECT date_trunc('day', created_at)::date AS day,
-              COALESCE(SUM(amount), 0)::float AS revenue,
+      `SELECT date_trunc('day', o.created_at)::date AS day,
+              COALESCE(SUM(t.total), 0)::float AS revenue,
               COUNT(*)::int AS orders
-       FROM orders
-       WHERE created_at >= now() - interval '30 days'
-         AND status NOT IN ('cancelled','refunded')
-       GROUP BY day
-       ORDER BY day ASC`,
+         FROM orders o
+         JOIN v_order_totals t ON t.order_id = o.id
+        WHERE o.created_at >= now() - interval '30 days'
+          AND o.status NOT IN ('cancelled','refunded')
+        GROUP BY day
+        ORDER BY day ASC`,
     );
     res.json(
       r.rows.map((row) => ({
@@ -111,13 +119,9 @@ dashboardRouter.get("/users-by-day", async (_req, res, next) => {
 dashboardRouter.get("/sales-by-category", async (_req, res, next) => {
   try {
     const r = await query(
-      `SELECT product_category AS category,
-              COALESCE(SUM(amount), 0)::float AS revenue,
-              COUNT(*)::int AS orders
-       FROM orders
-       WHERE status NOT IN ('cancelled','refunded')
-       GROUP BY product_category
-       ORDER BY revenue DESC`,
+      `SELECT category, revenue::float AS revenue, orders
+         FROM v_sales_by_category
+        ORDER BY revenue DESC`,
     );
     res.json(
       r.rows.map((row) => ({
@@ -134,14 +138,10 @@ dashboardRouter.get("/sales-by-category", async (_req, res, next) => {
 dashboardRouter.get("/top-products", async (_req, res, next) => {
   try {
     const r = await query(
-      `SELECT product_name AS name,
-              COALESCE(SUM(amount), 0)::float AS revenue,
-              COUNT(*)::int AS orders
-       FROM orders
-       WHERE status NOT IN ('cancelled','refunded')
-       GROUP BY product_name
-       ORDER BY revenue DESC
-       LIMIT 8`,
+      `SELECT name, revenue::float AS revenue, orders
+         FROM v_top_products
+        ORDER BY revenue DESC
+        LIMIT 8`,
     );
     res.json(
       r.rows.map((row) => ({
@@ -158,8 +158,10 @@ dashboardRouter.get("/top-products", async (_req, res, next) => {
 dashboardRouter.get("/recent-activity", async (_req, res, next) => {
   try {
     const orders = await query(
-      `SELECT id, order_number, customer_name, product_name, amount, created_at
-       FROM orders ORDER BY created_at DESC LIMIT 6`,
+      `SELECT id, order_number, customer_name, product_names, total, created_at
+         FROM v_orders_detail
+        ORDER BY created_at DESC
+        LIMIT 6`,
     );
     const users = await query(
       `SELECT id, name, role, created_at
@@ -170,8 +172,8 @@ dashboardRouter.get("/recent-activity", async (_req, res, next) => {
         type: "order",
         id: `order-${o.id}`,
         title: `New order ${o.order_number}`,
-        description: `${o.customer_name} ordered ${o.product_name}`,
-        amount: Number(o.amount),
+        description: `${o.customer_name} ordered ${o.product_names}`,
+        amount: Number(o.total),
         timestamp: o.created_at,
       })),
       ...users.rows.map((u) => ({

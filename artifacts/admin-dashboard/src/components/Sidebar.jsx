@@ -7,6 +7,7 @@ import {
   BarChart3,
   Settings as SettingsIcon,
   Boxes,
+  Database as DatabaseIcon,
 } from "lucide-react";
 import { useCurrentUser } from "../hooks/useAuth.js";
 import { cn } from "../lib/utils.js";
@@ -17,6 +18,7 @@ const NAV = [
   { href: "/users", label: "Users", icon: UsersIcon, roles: ["admin"] },
   { href: "/products", label: "Products", icon: Package, roles: ["admin", "manager", "user"] },
   { href: "/analytics", label: "Analytics", icon: BarChart3, roles: ["admin", "manager"] },
+  { href: "/database", label: "Database", icon: DatabaseIcon, roles: ["admin", "manager"] },
   { href: "/settings", label: "Settings", icon: SettingsIcon, roles: ["admin", "manager", "user"] },
 ];
 

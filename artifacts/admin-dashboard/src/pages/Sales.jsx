@@ -18,41 +18,70 @@ export default function Sales() {
   const [sortKey, setSortKey] = useState("createdAt");
   const [sortDir, setSortDir] = useState("desc");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  const emptyForm = {
     customerName: "",
     customerEmail: "",
-    productName: "",
-    productCategory: "",
-    amount: "",
-  });
+    items: [{ productId: "", quantity: 1 }],
+  };
+  const [form, setForm] = useState(emptyForm);
 
   const orders = useQuery({
     queryKey: ["orders", { q, status }],
     queryFn: () => api.listOrders({ q, status }),
   });
+  const products = useQuery({
+    queryKey: ["products", {}],
+    queryFn: () => api.listProducts({}),
+    enabled: open,
+  });
+
+  // Orders change product stock (database triggers), so refresh both lists.
+  function refresh() {
+    qc.invalidateQueries(); // orders, products and the dashboard charts
+  }
 
   const update = useMutation({
     mutationFn: ({ id, data }) => api.updateOrder(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+    onSuccess: refresh,
+    onError: (err) => {
+      alert(err.message);
+      refresh();
+    },
   });
   const create = useMutation({
     mutationFn: (data) => api.createOrder(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["orders"] });
+      refresh();
       setOpen(false);
-      setForm({
-        customerName: "",
-        customerEmail: "",
-        productName: "",
-        productCategory: "",
-        amount: "",
-      });
+      setForm(emptyForm);
     },
   });
   const remove = useMutation({
     mutationFn: (id) => api.deleteOrder(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+    onSuccess: refresh,
   });
+
+  function setItem(index, patch) {
+    setForm({
+      ...form,
+      items: form.items.map((it, i) => (i === index ? { ...it, ...patch } : it)),
+    });
+  }
+  function addItem() {
+    setForm({ ...form, items: [...form.items, { productId: "", quantity: 1 }] });
+  }
+  function removeItem(index) {
+    setForm({ ...form, items: form.items.filter((_, i) => i !== index) });
+  }
+
+  const productById = useMemo(
+    () => new Map((products.data || []).map((p) => [String(p.id), p])),
+    [products.data],
+  );
+  const orderTotal = form.items.reduce((sum, it) => {
+    const p = productById.get(String(it.productId));
+    return sum + (p ? p.price * (Number(it.quantity) || 0) : 0);
+  }, 0);
 
   const sorted = useMemo(() => {
     const data = [...(orders.data || [])];
@@ -77,12 +106,16 @@ export default function Sales() {
 
   function submit(e) {
     e.preventDefault();
-    const orderNumber = `ORD-${Date.now().toString().slice(-8)}`;
+    const items = form.items
+      .filter((it) => it.productId)
+      .map((it) => ({
+        productId: Number(it.productId),
+        quantity: Number(it.quantity),
+      }));
     create.mutate({
-      ...form,
-      orderNumber,
-      amount: Number(form.amount),
-      status: "pending",
+      customerName: form.customerName,
+      customerEmail: form.customerEmail,
+      items,
     });
   }
 
@@ -211,7 +244,10 @@ export default function Sales() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          create.reset();
+        }}
         title="New order"
         footer={
           <>
@@ -244,33 +280,65 @@ export default function Sales() {
               }
             />
           </Field>
-          <Field label="Product name">
-            <Input
-              required
-              value={form.productName}
-              onChange={(e) =>
-                setForm({ ...form, productName: e.target.value })
-              }
-            />
-          </Field>
-          <Field label="Product category">
-            <Input
-              required
-              value={form.productCategory}
-              onChange={(e) =>
-                setForm({ ...form, productCategory: e.target.value })
-              }
-            />
-          </Field>
-          <Field label="Amount (USD)">
-            <Input
-              type="number"
-              step="0.01"
-              required
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-            />
-          </Field>
+          <div className="mb-1 text-xs font-medium text-[var(--color-muted)]">
+            Items
+          </div>
+          {form.items.map((it, i) => {
+            const p = productById.get(String(it.productId));
+            return (
+              <div key={i} className="mb-2 flex items-center gap-2">
+                <div className="flex-1">
+                  <Select
+                    required
+                    value={it.productId}
+                    onChange={(e) => setItem(i, { productId: e.target.value })}
+                  >
+                    <option value="">Select a product...</option>
+                    {(products.data || []).map((pr) => (
+                      <option key={pr.id} value={pr.id} disabled={pr.stock < 1}>
+                        {pr.name} - {formatCurrency(pr.price)} ({pr.stock} in stock)
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="w-20">
+                  <Input
+                    type="number"
+                    min="1"
+                    max={p ? p.stock : undefined}
+                    required
+                    value={it.quantity}
+                    onChange={(e) => setItem(i, { quantity: e.target.value })}
+                  />
+                </div>
+                {form.items.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(i)}
+                    className="text-xs text-rose-600 hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addItem}
+            className="mb-3 text-xs text-[var(--color-brand)] hover:underline"
+          >
+            + Add another product
+          </button>
+          <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-3 text-sm">
+            <span className="text-[var(--color-muted)]">Order total</span>
+            <span className="font-semibold">{formatCurrency(orderTotal)}</span>
+          </div>
+          {create.isError && (
+            <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {create.error.message}
+            </div>
+          )}
         </form>
       </Modal>
     </div>

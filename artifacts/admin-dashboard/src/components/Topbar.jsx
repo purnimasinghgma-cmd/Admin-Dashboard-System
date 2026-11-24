@@ -8,6 +8,7 @@ const TITLES = {
   "/users": "Users",
   "/products": "Products",
   "/analytics": "Analytics",
+  "/database": "Database",
   "/settings": "Settings",
 };
 
